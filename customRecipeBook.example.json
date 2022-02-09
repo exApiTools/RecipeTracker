@@ -1,0 +1,15 @@
+﻿//copy this to customRecipeBook.json
+//then add your custom recipes here
+//see below or in defaultRecipeBook for examples
+[
+  {
+    "name": "Grimro's recipe",
+    "recipe": [
+      "Mirror Image",
+      "Treant Horde",
+      "Assassin",
+      "Rejuvenating"
+    ]
+  }
+]
+//yes, this is JSON with comments, deal with it

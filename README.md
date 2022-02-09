@@ -1,0 +1,1 @@
+Plugin for tracking Archnemesis recipes. Customizable through customRecipeBook.json.

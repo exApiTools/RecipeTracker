@@ -1,0 +1,311 @@
+﻿[
+  {
+    "result": "Assassin",
+    "name": "Assassin",
+    "recipe": [
+      "Deadeye",
+      "Vampiric"
+    ]
+  },
+  {
+    "result": "Corpse Detonator",
+    "name": "Corpse Detonator",
+    "recipe": [
+      "Necromancer",
+      "Incendiary"
+    ]
+  },
+  {
+    "result": "Corrupter",
+    "name": "Corrupter",
+    "recipe": [
+      "Bloodletter",
+      "Chaosweaver"
+    ]
+  },
+  {
+    "result": "Drought Bringer",
+    "name": "Drought Bringer",
+    "recipe": [
+      "Malediction",
+      "Deadeye"
+    ]
+  },
+  {
+    "result": "Entangler",
+    "name": "Entangler",
+    "recipe": [
+      "Toxic",
+      "Bloodletter"
+    ]
+  },
+  {
+    "result": "Executioner",
+    "name": "Executioner",
+    "recipe": [
+      "Frenzied",
+      "Berserker"
+    ]
+  },
+  {
+    "result": "Flame Strider",
+    "name": "Flame Strider",
+    "recipe": [
+      "Flameweaver",
+      "Hasted"
+    ]
+  },
+  {
+    "result": "Frost Strider",
+    "name": "Frost Strider",
+    "recipe": [
+      "Frostweaver",
+      "Hasted"
+    ]
+  },
+  {
+    "result": "Heralding Minions",
+    "name": "Heralding Minions",
+    "recipe": [
+      "Dynamo",
+      "Arcane Buffer"
+    ]
+  },
+  {
+    "result": "Hexer",
+    "name": "Hexer",
+    "recipe": [
+      "Chaosweaver",
+      "Echoist"
+    ]
+  },
+  {
+    "result": "Ice Prison",
+    "name": "Ice Prison",
+    "recipe": [
+      "Permafrost",
+      "Sentinel"
+    ]
+  },
+  {
+    "result": "Magma Barrier",
+    "name": "Magma Barrier",
+    "recipe": [
+      "Incendiary",
+      "Bonebreaker"
+    ]
+  },
+  {
+    "result": "Mana Siphoner",
+    "name": "Mana Siphoner",
+    "recipe": [
+      "Consecrator",
+      "Dynamo"
+    ]
+  },
+  {
+    "result": "Mirror Image",
+    "name": "Mirror Image",
+    "recipe": [
+      "Echoist",
+      "Soul Conduit"
+    ]
+  },
+  {
+    "result": "Necromancer",
+    "name": "Necromancer",
+    "recipe": [
+      "Bombardier",
+      "Overcharged"
+    ]
+  },
+  {
+    "result": "Rejuvenating",
+    "name": "Rejuvenating",
+    "recipe": [
+      "Gargantuan",
+      "Vampiric"
+    ]
+  },
+  {
+    "result": "Storm Strider",
+    "name": "Storm Strider",
+    "recipe": [
+      "Stormweaver",
+      "Hasted"
+    ]
+  },
+  {
+    "result": "Crystal-skinned",
+    "name": "Crystal-skinned",
+    "recipe": [
+      "Permafrost",
+      "Rejuvenating",
+      "Berserker"
+    ]
+  },
+  {
+    "result": "Effigy",
+    "name": "Effigy",
+    "recipe": [
+      "Hexer",
+      "Malediction",
+      "Corrupter"
+    ]
+  },
+  {
+    "result": "Empowered Elements",
+    "name": "Empowered Elements",
+    "recipe": [
+      "Evocationist",
+      "Steel-infused",
+      "Chaosweaver"
+    ]
+  },
+  {
+    "result": "Empowering Minions",
+    "name": "Empowering Minions",
+    "recipe": [
+      "Necromancer",
+      "Executioner",
+      "Gargantuan"
+    ]
+  },
+  {
+    "result": "Evocationist",
+    "name": "Evocationist",
+    "recipe": [
+      "Flameweaver",
+      "Frostweaver",
+      "Stormweaver"
+    ]
+  },
+  {
+    "result": "Invulnerable",
+    "name": "Invulnerable",
+    "recipe": [
+      "Sentinel",
+      "Juggernaut",
+      "Consecrator"
+    ]
+  },
+  {
+    "result": "Soul Eater",
+    "name": "Soul Eater",
+    "recipe": [
+      "Soul Conduit",
+      "Necromancer",
+      "Gargantuan"
+    ]
+  },
+  {
+    "result": "Temporal Bubble",
+    "name": "Temporal Bubble",
+    "recipe": [
+      "Juggernaut",
+      "Hexer",
+      "Arcane Buffer"
+    ]
+  },
+  {
+    "result": "Treant Horde",
+    "name": "Treant Horde",
+    "recipe": [
+      "Toxic",
+      "Sentinel",
+      "Steel-infused"
+    ]
+  },
+  {
+    "result": "Trickster",
+    "name": "Trickster",
+    "recipe": [
+      "Overcharged",
+      "Assassin",
+      "Echoist"
+    ]
+  },
+  {
+    "result": "Abberath-touched",
+    "name": "Abberath-touched",
+    "recipe": [
+      "Flame Strider",
+      "Frenzied",
+      "Rejuvenating"
+    ]
+  },
+  {
+    "result": "Arakaali-touched",
+    "name": "Arakaali-touched",
+    "recipe": [
+      "Corpse Detonator",
+      "Entangler",
+      "Assassin"
+    ]
+  },
+  {
+    "result": "Brine King-touched",
+    "name": "Brine King-touched",
+    "recipe": [
+      "Ice Prison",
+      "Storm Strider",
+      "Heralding Minions"
+    ]
+  },
+  {
+    "result": "Shakari-touched",
+    "name": "Shakari-touched",
+    "recipe": [
+      "Entangler",
+      "Soul Eater",
+      "Drought Bringer"
+    ]
+  },
+  {
+    "result": "Tukohama-touched",
+    "name": "Tukohama-touched",
+    "recipe": [
+      "Bonebreaker",
+      "Executioner",
+      "Magma Barrier"
+    ]
+  },
+  {
+    "result": "Lunaris-touched",
+    "name": "Lunaris-touched",
+    "recipe": [
+      "Invulnerable",
+      "Frost Strider",
+      "Empowering Minions"
+    ]
+  },
+  {
+    "result": "Solaris-touched",
+    "name": "Solaris-touched",
+    "recipe": [
+      "Invulnerable",
+      "Magma Barrier",
+      "Empowering Minions"
+    ]
+  },
+  {
+    "result": "Innocence-touched",
+    "name": "Innocence-touched",
+    "recipe": [
+      "Lunaris-touched",
+      "Solaris-touched",
+      "Mirror Image",
+      "Mana Siphoner"
+    ]
+  },
+  {
+    "result": "Kitava-touched",
+    "name": "Kitava-touched",
+    "recipe": [
+      "Tukohama-touched",
+      "Abberath-touched",
+      "Corrupter",
+      "Corpse Detonator"
+    ]
+  }
+]
