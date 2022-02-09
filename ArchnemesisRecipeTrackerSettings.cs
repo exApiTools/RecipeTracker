@@ -12,15 +12,14 @@ namespace ArchnemesisRecipeTracker
     {
         internal const string NoRecipeSelected = "(none)";
 
-        public ArchnemesisRecipeTrackerSettings()
-        {
-            Enable = new ToggleNode(false);
-        }
-
+        public bool DisableDefaultRecipeBook { get; set; } = false;
         public ToggleNode Enable { get; set; } = new ToggleNode(false);
 
         [JsonIgnore]
         public ButtonNode ReloadRecipeBooks { get; set; } = new ButtonNode();
+
+        [JsonIgnore]
+        public ButtonNode ExportDefaultRecipeBook { get; set; } = new ButtonNode();
 
         [Menu("Toggle window key")]
         public HotkeyNode ToggleWindowKey { get; set; } = new HotkeyNode(Keys.NumPad4);
@@ -31,6 +30,7 @@ namespace ArchnemesisRecipeTracker
         public ToggleNode RemeberRecipeOnZoneChange { get; set; } = new ToggleNode(false);
         public ToggleNode HideUndesiredRecipesFromTracker { get; set; } = new ToggleNode(false);
         public ToggleNode CacheGroundItemPosition { get; set; } = new ToggleNode(true);
+        public ToggleNode DisplayRecipeComponents { get; set; } = new ToggleNode(true);
         public ColorNode UndesiredItemColor { get; set; } = new ColorNode(Color.Red);
         public ColorNode RecipeItemColor { get; set; } = new ColorNode(Color.Green);
         public ColorNode DesiredItemColor { get; set; } = new ColorNode(Color.Yellow);

@@ -1,8 +1,10 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Reflection;
+using System.Text;
+using System.Threading;
 using ExileCore;
 using ExileCore.PoEMemory;
 using ExileCore.PoEMemory.Components;
@@ -36,6 +38,8 @@ namespace ArchnemesisRecipeTracker
 
     public class ArchnemesisRecipeTracker : BaseSettingsPlugin<ArchnemesisRecipeTrackerSettings>
     {
+        private static readonly Assembly _assembly = typeof(ArchnemesisRecipeTracker).Assembly;
+
         private readonly CachedValue<IEnumerable<(Element element, string itemDisplayName)>> _itemsOnGroundCache;
         private readonly CachedValue<IEnumerable<(ArchnemesisInventorySlot element, string itemDisplayName)>> _inventoryElementsCache;
 
@@ -44,7 +48,7 @@ namespace ArchnemesisRecipeTracker
         private Dictionary<string, RecipeEntry> _recipesByResult = new Dictionary<string, RecipeEntry>();
         private RecipeEntry _trackedRecipe;
         private HashSet<string> _desiredComponentCache = new HashSet<string>();
-        private HashSet<string> _alreadyPutInCache = new HashSet<string>();
+        private List<string> _alreadyPutInCache = new List<string>();
         private Dictionary<string, int> _presentIngredientCache = new Dictionary<string, int>();
         private Dictionary<string, RecipeEntry> _recipesByName = new Dictionary<string, RecipeEntry>();
         private bool _inventoryWasShownOnLastFrame = false;
@@ -71,6 +75,7 @@ namespace ArchnemesisRecipeTracker
             Input.RegisterKey(Settings.ToggleWindowKey);
             Settings.ToggleWindowKey.OnValueChanged += () => { Input.RegisterKey(Settings.ToggleWindowKey); };
             Settings.ReloadRecipeBooks.OnPressed += ReloadRecipeBook;
+            Settings.ExportDefaultRecipeBook.OnPressed += ExportDefaultRecipeBook;
             Settings.RecipeToWorkTowards.OnValueSelected += newValue =>
             {
                 if (_recipesByName.ContainsKey(newValue))
@@ -87,7 +92,7 @@ namespace ArchnemesisRecipeTracker
         public override void AreaChange(AreaInstance area)
         {
             _inventoryWasShownOnLastFrame = false;
-            _alreadyPutInCache = new HashSet<string>();
+            _alreadyPutInCache = new List<string>();
             if (!Settings.RemeberRecipeOnZoneChange)
             {
                 _trackedRecipe = null;
@@ -111,22 +116,55 @@ namespace ArchnemesisRecipeTracker
             }
         }
 
+        private void ExportDefaultRecipeBook()
+        {
+            var customRecipeBookPath = Path.Combine(DirectoryFullName, "defaultRecipeBook.json");
+            using var defaultBookReader = GetDefaultRecipeBook();
+            using var fileStream = File.Open(customRecipeBookPath, FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
+            defaultBookReader.CopyTo(fileStream);
+        }
+
+        private static Stream GetDefaultRecipeBook()
+        {
+            return _assembly.GetManifestResourceStream("defaultRecipeBook.json") ??
+                   throw new Exception("Embedded defaultRecipeBook.json is missing");
+        }
+
         private void ReloadRecipeBook()
         {
             try
             {
-                var defaultRecipeBookPath = Path.Combine(DirectoryFullName, "defaultRecipeBook.json");
-                var defaultRecipeBook = JsonConvert.DeserializeObject<List<RecipeEntry>>(File.ReadAllText(defaultRecipeBookPath)) ??
-                                        throw new Exception($"null in {defaultRecipeBookPath}");
+                var fullRecipeBook = new List<RecipeEntry>();
+                using (var defaultBookReader = new StreamReader(GetDefaultRecipeBook()))
+                {
+                    var text = defaultBookReader.ReadToEnd();
+                    var defaultRecipeBook = JsonConvert.DeserializeObject<List<RecipeEntry>>(text) ??
+                                            throw new Exception("null in default recipe book");
+                    fullRecipeBook.AddRange(defaultRecipeBook);
+                }
+
                 var customRecipeBookPath = Path.Combine(DirectoryFullName, "customRecipeBook.json");
                 if (!File.Exists(customRecipeBookPath))
                 {
-                    File.Copy(Path.Combine(DirectoryFullName, "customRecipeBook.example.json"), customRecipeBookPath, false);
+                    using var exampleStream = _assembly.GetManifestResourceStream("customRecipeBook.example.json");
+                    if (exampleStream == null)
+                    {
+                        throw new Exception("Embedded customRecipeBook.example.json is missing");
+                    }
+
+                    using var fileStream = File.Open(customRecipeBookPath, FileMode.CreateNew, FileAccess.ReadWrite, FileShare.ReadWrite);
+                    exampleStream.CopyTo(fileStream);
                 }
 
                 var customRecipeBook = JsonConvert.DeserializeObject<List<RecipeEntry>>(File.ReadAllText(customRecipeBookPath)) ??
                                        throw new Exception($"null in {customRecipeBookPath}");
-                var fullRecipeBook = defaultRecipeBook.Concat(customRecipeBook).ToList();
+                fullRecipeBook.AddRange(customRecipeBook);
+                var nullNames = fullRecipeBook.Where(x => x.Name == null).ToList();
+                if (nullNames.Any())
+                {
+                    throw new Exception("You have recipes with a missing name. I can't handle this:(");
+                }
+
                 var duplicateNames = fullRecipeBook.GroupBy(x => x.Name).Where(x => x.Count() > 1).ToList();
                 if (duplicateNames.Any())
                 {
@@ -139,9 +177,16 @@ namespace ArchnemesisRecipeTracker
                     throw new Exception($"Duplicate recipe results: {string.Join(", ", duplicateResults.Select(x => x.Key))}");
                 }
 
+                var emptyRecipes = fullRecipeBook.Where(x => x.Recipe == null || x.Recipe.Count == 0).ToList();
+                if (emptyRecipes.Any())
+                {
+                    throw new Exception($"You have recipes with an empty or missing recipe ({string.Join(",", emptyRecipes.Select(x => x.Name))}). I can't handle this:(");
+                }
+
                 _recipesByResult = fullRecipeBook.Where(x => x.Result != null).ToDictionary(x => x.Result);
                 _recipesByName = fullRecipeBook.ToDictionary(x => x.Name);
                 Settings.RecipeToWorkTowards.SetListValues(_recipesByName.Keys.OrderBy(x => x).Prepend(ArchnemesisRecipeTrackerSettings.NoRecipeSelected).ToList());
+                _trackedRecipe = null;
             }
             catch (Exception ex)
             {
@@ -149,9 +194,13 @@ namespace ArchnemesisRecipeTracker
             }
         }
 
-        private HashSet<RecipeEntry> GetRecipesWithEnoughIngredients(ICollection<string> presentIngredients)
+        private HashSet<RecipeEntry> GetRecipesWithEnoughIngredients(ICollection<string> presentIngredients, ICollection<string> excludedIngredients, ICollection<string> putInIngredients)
         {
-            return _recipesByName.Values.Where(x => x.Recipe.All(presentIngredients.Contains)).ToHashSet();
+            return _recipesByName.Values
+               .Where(x => x.Recipe.Union(putInIngredients).Take(4 + 1).Count() <= 4)
+               .Where(x => !x.Recipe.Any(excludedIngredients.Contains))
+               .Where(x => x.Recipe.All(presentIngredients.Contains))
+               .ToHashSet();
         }
 
         private HashSet<string> GetDesiredComponents()
@@ -248,24 +297,95 @@ namespace ArchnemesisRecipeTracker
             }
         }
 
-        private void RenderRecipeLine(RecipeEntry recipe, Color color)
+        private void RenderRecipeLine(RecipeEntry recipe, Color color, HashSet<RecipeEntry> completedRecipes, HashSet<string> putInIngredients)
         {
+            var recipeIsCompleted = completedRecipes.Contains(recipe);
+            if (recipeIsCompleted && _trackedRecipe == recipe)
+            {
+                _trackedRecipe = null;
+            }
+
             var ticked = _trackedRecipe == recipe;
-            ImGui.PushStyleColor(ImGuiCol.Text, color.ToImgui());
+            ImGui.PushStyleColor(ImGuiCol.Text, (recipeIsCompleted ? Color.Gray : color).ToImgui());
+
             if (ImGui.Checkbox(recipe.Name, ref ticked))
             {
-                if (!ticked)
-                {
-                    _trackedRecipe = null;
-                }
-
-                if (ticked)
-                {
-                    _trackedRecipe = recipe;
-                }
+                _trackedRecipe = ticked ? recipe : null;
             }
 
             ImGui.PopStyleColor();
+            if (recipeIsCompleted)
+            {
+                ImGui.SameLine();
+                ImGui.TextColored(Color.Green.ToImguiVec4(), "(completed)");
+            }
+            else
+            {
+                if (!Settings.DisplayRecipeComponents)
+                {
+                    ImGui.SameLine();
+                }
+
+                var sb = new StringBuilder(100);
+                sb.Append("(");
+                sb.Append(recipe.Recipe.Count);
+                sb.Append(" ingredient");
+                if (recipe.Recipe.Count != 1)
+                {
+                    sb.Append('s');
+                }
+
+                if (Settings.DisplayRecipeComponents)
+                {
+                    sb.Append(": ");
+                    foreach (var ingredient in recipe.Recipe)
+                    {
+                        if (putInIngredients.Contains(ingredient))
+                        {
+                            ImGui.Text(sb.ToString());
+                            sb.Clear();
+                            ImGui.SameLine(0, 0);
+                            ImGui.TextColored(Color.Green.ToImguiVec4(), ingredient);
+                            ImGui.SameLine(0, 0);
+                        }
+                        else
+                        {
+                            sb.Append(ingredient);
+                        }
+
+                        sb.Append(", ");
+                    }
+
+                    sb.Length -= 2;
+
+                    if (recipe.Result != null && recipe.Result != recipe.Name)
+                    {
+                        sb.AppendFormat(" -> {0}", recipe.Result);
+                    }
+                }
+
+                sb.Append(')');
+
+                ImGui.Text(sb.ToString());
+            }
+        }
+
+        private (HashSet<RecipeEntry> completedRecipes, HashSet<string> combinableSlottedIngredients) ProcessPutInIngredients(List<string> putInIngredients)
+        {
+            var completedRecipes = new HashSet<RecipeEntry>();
+            putInIngredients = putInIngredients.ToList(); //will be modified
+            for (int i = 1; i <= putInIngredients.Count; i++)
+            {
+                var completedRecipe = _recipesByName.Values.Except(completedRecipes).FirstOrDefault(x => !x.Recipe.Except(putInIngredients.Take(i)).Any());
+                if (completedRecipe != null)
+                {
+                    putInIngredients.RemoveAll(completedRecipe.Recipe.Contains);
+                    completedRecipes.Add(completedRecipe);
+                    i = 0;
+                }
+            }
+
+            return (completedRecipes, putInIngredients.ToHashSet());
         }
 
         public override void Render()
@@ -278,12 +398,6 @@ namespace ArchnemesisRecipeTracker
             if (Settings.ToggleWindowKey.PressedOnce())
             {
                 windowState = !windowState;
-            }
-
-            if (!_recipesByName.TryGetValue(Settings.RecipeToWorkTowards.Value ?? ArchnemesisRecipeTrackerSettings.NoRecipeSelected, out var recipeToWorkOn) &&
-                Settings.RecipeToWorkTowards.Value != ArchnemesisRecipeTrackerSettings.NoRecipeSelected)
-            {
-                Settings.RecipeToWorkTowards.Value = ArchnemesisRecipeTrackerSettings.NoRecipeSelected;
             }
 
             var inventory = GameController.IngameState.IngameUi.ArchnemesisInventoryPanel;
@@ -301,25 +415,28 @@ namespace ArchnemesisRecipeTracker
 
             _inventoryWasShownOnLastFrame = inventory.IsVisible;
 
-            var alreadyPutIn = inputPanel.IsVisible
-                                   ? _alreadyPutInCache = inputPanel.InventoryElements.Select(x => x.Item.DisplayName).ToHashSet()
-                                   : _alreadyPutInCache;
+            var fullPutInList = inputPanel.IsVisible
+                                    ? _alreadyPutInCache = inputPanel.InventoryElements.Select(x => x.Item.DisplayName).ToList()
+                                    : _alreadyPutInCache;
+            var (completedRecipes, combinableIngredients) = ProcessPutInIngredients(fullPutInList);
+            var excludedIngredients = fullPutInList.Except(combinableIngredients).ToHashSet();
             var presentIngredients =
                 inventory.IsVisible
                     ? _presentIngredientCache =
                           _inventoryElementsCache.Value
                              .Select(x => x.itemDisplayName)
-                             .Concat(alreadyPutIn)
+                             .Concat(fullPutInList)
                              .GroupBy(x => x)
                              .ToDictionary(x => x.Key, x => x.Count())
                     : _presentIngredientCache;
             if (windowState)
             {
                 ImGui.Begin($"{Name}", ref windowState);
+                ImGui.Text($"{4 - fullPutInList.Count} free slots left");
+                var recipeToWorkOn = PickRecipeToWorkOn();
                 var nextSteps = NextSteps.Empty;
                 if (recipeToWorkOn != null)
                 {
-                    ImGui.Text($"Working towards {recipeToWorkOn.Name}.");
                     nextSteps = GetNextSteps(recipeToWorkOn, new Dictionary<string, int>(presentIngredients));
                     if (nextSteps.RecipesToRun.Any())
                     {
@@ -339,13 +456,14 @@ namespace ArchnemesisRecipeTracker
 
                 if (ImGui.TreeNodeEx("Select recipe to build in this map", ImGuiTreeNodeFlags.DefaultOpen))
                 {
-                    var recipesWithEnoughIngredients = GetRecipesWithEnoughIngredients(presentIngredients.Keys);
+                    var recipesWithEnoughIngredients = GetRecipesWithEnoughIngredients(presentIngredients.Keys, excludedIngredients, fullPutInList);
+                    recipesWithEnoughIngredients.UnionWith(completedRecipes);
                     var nextStepRecipeNames = nextSteps.RecipesToRun.ToHashSet();
                     if (_trackedRecipe != null && !recipesWithEnoughIngredients.Contains(_trackedRecipe))
                     {
-                        RenderRecipeLine(_trackedRecipe, Settings.RecipeItemColor);
+                        RenderRecipeLine(_trackedRecipe, Settings.RecipeItemColor, completedRecipes, combinableIngredients);
                         ImGui.SameLine();
-                        ImGui.TextColored(Color.Yellow.ToImguiVec4(), "(not enough ingredients)");
+                        ImGui.TextColored(Color.Yellow.ToImguiVec4(), "(cannot complete in this map)");
                         ImGui.Separator();
                     }
 
@@ -357,7 +475,7 @@ namespace ArchnemesisRecipeTracker
                     {
                         foreach (var recipe in recipesToBuildTrackedItem)
                         {
-                            RenderRecipeLine(recipe, Settings.RecipeItemColor);
+                            RenderRecipeLine(recipe, Settings.RecipeItemColor, completedRecipes, combinableIngredients);
                         }
 
                         ImGui.Separator();
@@ -376,7 +494,7 @@ namespace ArchnemesisRecipeTracker
                         ImGui.Text("but are marked as desired");
                         foreach (var recipe in desiredRecipes)
                         {
-                            RenderRecipeLine(recipe, Settings.DesiredItemColor);
+                            RenderRecipeLine(recipe, Settings.DesiredItemColor, completedRecipes, combinableIngredients);
                         }
 
                         ImGui.Separator();
@@ -389,7 +507,7 @@ namespace ArchnemesisRecipeTracker
                         ImGui.Text("just there for you to know you can do them");
                         foreach (var recipe in recipesWithEnoughIngredients.OrderBy(x => x.Name))
                         {
-                            RenderRecipeLine(recipe, Settings.UndesiredItemColor);
+                            RenderRecipeLine(recipe, Settings.UndesiredItemColor, completedRecipes, combinableIngredients);
                         }
                     }
                 }
@@ -415,24 +533,14 @@ namespace ArchnemesisRecipeTracker
                     ImGui.SetWindowFontScale(1);
                 }
 
-                if (alreadyPutIn.SetEquals(recipeSet))
-                {
-                    DrawText($"Recipe {_trackedRecipe.Name} is complete!", textDisplayPosition, Color.Green);
-                }
-                else if (recipeSet.IsProperSupersetOf(presentIngredients.Keys))
+                if (recipeSet.IsProperSupersetOf(presentIngredients.Keys))
                 {
                     DrawText($"You are missing components of recipe {_trackedRecipe.Name}: " +
                              string.Join(", ", recipeSet.Except(presentIngredients.Keys)), textDisplayPosition, Color.Yellow);
                 }
                 else
                 {
-                    if (!alreadyPutIn.IsSubsetOf(recipeSet))
-                    {
-                        DrawText($"You put in components the recipe {_trackedRecipe.Name} doesn't use: " +
-                                 string.Join(", ", alreadyPutIn.Except(recipeSet)), textDisplayPosition, Color.Yellow);
-                    }
-
-                    var itemMap = _trackedRecipe.Recipe.Except(alreadyPutIn).Select((name, i) => (name, i))
+                    var itemMap = _trackedRecipe.Recipe.Except(combinableIngredients).Select((name, i) => (name, i))
                        .ToDictionary(x => x.name, x => x.i + 1);
                     foreach (var (element, itemDisplayName) in _inventoryElementsCache.Value)
                     {
@@ -449,27 +557,57 @@ namespace ArchnemesisRecipeTracker
             }
 
             var crossedElements = _itemsOnGroundCache.Value.Select(x =>
-                (x.element, x.itemDisplayName, Settings.GroundCrossThickness.Value, Settings.CacheGroundItemPosition.Value));
+                (x.element, x.itemDisplayName, Settings.GroundCrossThickness.Value, Settings.CacheGroundItemPosition.Value, true));
             if (inventory.IsVisible)
             {
                 crossedElements = crossedElements.Concat(_inventoryElementsCache.Value.Select(x =>
-                    ((Element)x.element, x.itemDisplayName, Settings.InventoryCrossThickness.Value, true)));
+                    ((Element)x.element, x.itemDisplayName, Settings.InventoryCrossThickness.Value, true, false)));
             }
 
-            foreach (var (element, name, thickness, useCachePosition) in crossedElements)
+            foreach (var (element, name, thickness, useCachePosition, drawCurrentCount) in crossedElements)
             {
+                var elementRect = new Lazy<RectangleF>(() =>
+                {
+                    var rect = useCachePosition ? element.GetClientRectCache : element.GetClientRect();
+                    rect.Inflate(-2, -2);
+                    return rect;
+                }, LazyThreadSafetyMode.None);
                 if (!_desiredComponentCache.Contains(name) &&
                     (_trackedRecipe == null || !_trackedRecipe.Recipe.Contains(name)))
                 {
-                    var elementRect = useCachePosition ? element.GetClientRectCache : element.GetClientRect();
-                    elementRect.Inflate(-2, -2);
-
-                    drawList.AddLine(elementRect.TopLeft.ToVector2Num(), elementRect.BottomRight.ToVector2Num(), Settings.UndesiredItemColor.Value.ToImgui(), thickness);
-                    drawList.AddLine(elementRect.BottomLeft.ToVector2Num(), elementRect.TopRight.ToVector2Num(), Settings.UndesiredItemColor.Value.ToImgui(), thickness);
+                    drawList.AddLine(elementRect.Value.TopLeft.ToVector2Num(), elementRect.Value.BottomRight.ToVector2Num(), Settings.UndesiredItemColor.Value.ToImgui(),
+                        thickness);
+                    drawList.AddLine(elementRect.Value.BottomLeft.ToVector2Num(), elementRect.Value.TopRight.ToVector2Num(), Settings.UndesiredItemColor.Value.ToImgui(),
+                        thickness);
+                }
+                else if (drawCurrentCount && presentIngredients.TryGetValue(name, out var value) && value > 0)
+                {
+                    drawList.AddText(elementRect.Value.TopLeft.ToVector2Num(), Settings.DesiredItemColor.Value.ToImgui(), value.ToString());
                 }
             }
 
             ImGui.End();
+        }
+
+        private RecipeEntry PickRecipeToWorkOn()
+        {
+            var currentRecipeIndex = Math.Max(0,
+                Settings.RecipeToWorkTowards.Values.IndexOf(Settings.RecipeToWorkTowards.Value ?? ArchnemesisRecipeTrackerSettings.NoRecipeSelected));
+            ImGui.Text("Working towards");
+            ImGui.SameLine();
+            if (ImGui.Combo("##currentRecipe", ref currentRecipeIndex, Settings.RecipeToWorkTowards.Values.ToArray(), Settings.RecipeToWorkTowards.Values.Count))
+            {
+                Settings.RecipeToWorkTowards.Value = Settings.RecipeToWorkTowards.Values[currentRecipeIndex];
+                _SaveSettings();
+            }
+
+            if (!_recipesByName.TryGetValue(Settings.RecipeToWorkTowards.Value ?? ArchnemesisRecipeTrackerSettings.NoRecipeSelected, out var recipeToWorkOn) &&
+                Settings.RecipeToWorkTowards.Value != ArchnemesisRecipeTrackerSettings.NoRecipeSelected)
+            {
+                Settings.RecipeToWorkTowards.Value = ArchnemesisRecipeTrackerSettings.NoRecipeSelected;
+            }
+
+            return recipeToWorkOn;
         }
     }
 }
