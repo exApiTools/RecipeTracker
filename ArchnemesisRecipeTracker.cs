@@ -36,8 +36,8 @@ namespace ArchnemesisRecipeTracker
 
     public class ArchnemesisRecipeTracker : BaseSettingsPlugin<ArchnemesisRecipeTrackerSettings>
     {
-        private readonly ConcurrentDictionary<LabelOnGround, bool> _itemsOnGroundPathCache = new ConcurrentDictionary<LabelOnGround, bool>();
-        private readonly CachedValue<IEnumerable<(Element, string)>> _itemsOnGroundCache;
+        private readonly CachedValue<IEnumerable<(Element element, string itemDisplayName)>> _itemsOnGroundCache;
+        private readonly CachedValue<IEnumerable<(ArchnemesisInventorySlot element, string itemDisplayName)>> _inventoryElementsCache;
 
         private bool windowState;
 
@@ -53,11 +53,13 @@ namespace ArchnemesisRecipeTracker
         {
             _itemsOnGroundCache = new TimeCache<IEnumerable<(Element, string)>>(() =>
                 GameController.IngameState.IngameUi.ItemsOnGroundLabelsVisible
-                   .Where(x => _itemsOnGroundPathCache.GetOrAdd(x,
-                        i => i.ItemOnGround?.GetComponent<WorldItem>()?.ItemEntity?.Path ==
-                             "Metadata/Items/Archnemesis/ArchnemesisMod"))
+                   .Where(x => x.ItemOnGround?.GetComponent<WorldItem>()?.ItemEntity?.Path ==
+                               "Metadata/Items/Archnemesis/ArchnemesisMod")
                    .Select(x => (x.Label, x.Label.Text))
                    .ToList(), 500);
+            _inventoryElementsCache = new TimeCache<IEnumerable<(ArchnemesisInventorySlot, string)>>(() =>
+                GameController.IngameState.IngameUi.ArchnemesisInventoryPanel.InventoryElements.Select(x => (x, x.Item.DisplayName))
+                   .ToList(), 200);
         }
 
         public override void OnLoad()
@@ -84,7 +86,6 @@ namespace ArchnemesisRecipeTracker
 
         public override void AreaChange(AreaInstance area)
         {
-            _itemsOnGroundPathCache.Clear();
             _inventoryWasShownOnLastFrame = false;
             _alreadyPutInCache = new HashSet<string>();
             if (!Settings.RemeberRecipeOnZoneChange)
@@ -247,9 +248,10 @@ namespace ArchnemesisRecipeTracker
             }
         }
 
-        private void RenderRecipeLine(RecipeEntry recipe)
+        private void RenderRecipeLine(RecipeEntry recipe, Color color)
         {
             var ticked = _trackedRecipe == recipe;
+            ImGui.PushStyleColor(ImGuiCol.Text, color.ToImgui());
             if (ImGui.Checkbox(recipe.Name, ref ticked))
             {
                 if (!ticked)
@@ -262,6 +264,8 @@ namespace ArchnemesisRecipeTracker
                     _trackedRecipe = recipe;
                 }
             }
+
+            ImGui.PopStyleColor();
         }
 
         public override void Render()
@@ -303,7 +307,8 @@ namespace ArchnemesisRecipeTracker
             var presentIngredients =
                 inventory.IsVisible
                     ? _presentIngredientCache =
-                          inventory.InventoryElements.Select(x => x.Item.DisplayName)
+                          _inventoryElementsCache.Value
+                             .Select(x => x.itemDisplayName)
                              .Concat(alreadyPutIn)
                              .GroupBy(x => x)
                              .ToDictionary(x => x.Key, x => x.Count())
@@ -338,7 +343,7 @@ namespace ArchnemesisRecipeTracker
                     var nextStepRecipeNames = nextSteps.RecipesToRun.ToHashSet();
                     if (_trackedRecipe != null && !recipesWithEnoughIngredients.Contains(_trackedRecipe))
                     {
-                        RenderRecipeLine(_trackedRecipe);
+                        RenderRecipeLine(_trackedRecipe, Settings.RecipeItemColor);
                         ImGui.SameLine();
                         ImGui.TextColored(Color.Yellow.ToImguiVec4(), "(not enough ingredients)");
                         ImGui.Separator();
@@ -352,7 +357,7 @@ namespace ArchnemesisRecipeTracker
                     {
                         foreach (var recipe in recipesToBuildTrackedItem)
                         {
-                            RenderRecipeLine(recipe);
+                            RenderRecipeLine(recipe, Settings.RecipeItemColor);
                         }
 
                         ImGui.Separator();
@@ -367,24 +372,33 @@ namespace ArchnemesisRecipeTracker
                        .ToList();
                     if (desiredRecipes.Any())
                     {
+                        ImGui.Text("These are not worked towards currently,");
+                        ImGui.Text("but are marked as desired");
                         foreach (var recipe in desiredRecipes)
                         {
-                            RenderRecipeLine(recipe);
+                            RenderRecipeLine(recipe, Settings.DesiredItemColor);
                         }
 
                         ImGui.Separator();
                     }
 
                     recipesWithEnoughIngredients.ExceptWith(desiredRecipes);
-                    foreach (var recipe in recipesWithEnoughIngredients.OrderBy(x => x.Name))
+                    if (!Settings.HideUndesiredRecipesFromTracker && recipesWithEnoughIngredients.Any())
                     {
-                        RenderRecipeLine(recipe);
+                        ImGui.Text("These are not marked as desired, but are");
+                        ImGui.Text("just there for you to know you can do them");
+                        foreach (var recipe in recipesWithEnoughIngredients.OrderBy(x => x.Name))
+                        {
+                            RenderRecipeLine(recipe, Settings.UndesiredItemColor);
+                        }
                     }
                 }
 
                 ImGui.End();
             }
 
+            ImGui.Begin("lmao",
+                ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav);
             var drawList = ImGui.GetBackgroundDrawList();
             if (inventory.IsVisible && inputPanel.IsVisible && _trackedRecipe != null)
             {
@@ -392,11 +406,13 @@ namespace ArchnemesisRecipeTracker
                 var panelClientRect = inputPanel.GetClientRect();
                 var textDisplayPosition = new Vector2(panelClientRect.Left, panelClientRect.Center.Y);
 
-                void DrawText(string text, Vector2 position, Color color)
+                void DrawText(string text, Vector2 position, Color color, float scale = 1)
                 {
+                    ImGui.SetWindowFontScale(scale);
                     var boxRect = ImGui.CalcTextSize(text);
                     drawList.AddRectFilled(position, position + boxRect, Color.Black.ToImgui());
                     drawList.AddText(position, color.ToImgui(), text);
+                    ImGui.SetWindowFontScale(1);
                 }
 
                 if (alreadyPutIn.SetEquals(recipeSet))
@@ -418,50 +434,42 @@ namespace ArchnemesisRecipeTracker
 
                     var itemMap = _trackedRecipe.Recipe.Except(alreadyPutIn).Select((name, i) => (name, i))
                        .ToDictionary(x => x.name, x => x.i + 1);
-                    foreach (var element in inventory.InventoryElements)
+                    foreach (var (element, itemDisplayName) in _inventoryElementsCache.Value)
                     {
-                        if (itemMap.TryGetValue(element.Item.DisplayName, out var itemIndex))
+                        if (itemMap.TryGetValue(itemDisplayName, out var itemIndex))
                         {
-                            var elementRect = element.GetClientRect();
+                            var elementRect = element.GetClientRectCache;
                             elementRect.Inflate(-2, -2);
-                            DrawText(itemIndex.ToString(), elementRect.TopLeft.ToVector2Num(), Color.Blue);
-                            drawList.AddLine(
-                                new Vector2(elementRect.Center.X, elementRect.Top),
-                                new Vector2(elementRect.Center.X, elementRect.Bottom),
-                                Color.Green.ToImgui(), 5);
-                            drawList.AddLine(
-                                new Vector2(elementRect.Left, elementRect.Center.Y),
-                                new Vector2(elementRect.Right, elementRect.Center.Y),
-                                Color.Green.ToImgui(), 5);
-                            if (itemIndex == 1)
-                            {
-                                drawList.AddCircleFilled(elementRect.Center.ToVector2Num(),
-                                    Math.Min(elementRect.Width, elementRect.Height) / 4,
-                                    Color.Blue.ToImgui(), 8);
-                            }
+                            DrawText(itemIndex.ToString(), elementRect.TopLeft.ToVector2Num(),
+                                itemIndex == 1 ? Settings.PutInNowItemColor : Settings.RecipeItemColor,
+                                1 + Settings.OrderTextSize * (elementRect.Height / ImGui.CalcTextSize(itemIndex.ToString()).Y - 1));
                         }
                     }
                 }
             }
 
-            var crossedElements = _itemsOnGroundCache.Value;
+            var crossedElements = _itemsOnGroundCache.Value.Select(x =>
+                (x.element, x.itemDisplayName, Settings.GroundCrossThickness.Value, Settings.CacheGroundItemPosition.Value));
             if (inventory.IsVisible)
             {
-                crossedElements = crossedElements.Concat(inventory.InventoryElements.Select(x => ((Element)x, x.Item.DisplayName)));
+                crossedElements = crossedElements.Concat(_inventoryElementsCache.Value.Select(x =>
+                    ((Element)x.element, x.itemDisplayName, Settings.InventoryCrossThickness.Value, true)));
             }
 
-            foreach (var (element, name) in crossedElements)
+            foreach (var (element, name, thickness, useCachePosition) in crossedElements)
             {
                 if (!_desiredComponentCache.Contains(name) &&
                     (_trackedRecipe == null || !_trackedRecipe.Recipe.Contains(name)))
                 {
-                    var elementRect = element.GetClientRect();
+                    var elementRect = useCachePosition ? element.GetClientRectCache : element.GetClientRect();
                     elementRect.Inflate(-2, -2);
 
-                    drawList.AddLine(elementRect.TopLeft.ToVector2Num(), elementRect.BottomRight.ToVector2Num(), Color.Red.ToImgui());
-                    drawList.AddLine(elementRect.BottomLeft.ToVector2Num(), elementRect.TopRight.ToVector2Num(), Color.Red.ToImgui());
+                    drawList.AddLine(elementRect.TopLeft.ToVector2Num(), elementRect.BottomRight.ToVector2Num(), Settings.UndesiredItemColor.Value.ToImgui(), thickness);
+                    drawList.AddLine(elementRect.BottomLeft.ToVector2Num(), elementRect.TopRight.ToVector2Num(), Settings.UndesiredItemColor.Value.ToImgui(), thickness);
                 }
             }
+
+            ImGui.End();
         }
     }
 }
