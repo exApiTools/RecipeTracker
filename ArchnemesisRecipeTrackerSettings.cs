@@ -29,6 +29,7 @@ namespace ArchnemesisRecipeTracker
         public ToggleNode HideWindowWhenArchnemesisInventoryCloses { get; set; } = new ToggleNode(false);
         public ToggleNode RemeberRecipeOnZoneChange { get; set; } = new ToggleNode(false);
         public ToggleNode HideUndesiredRecipesFromTracker { get; set; } = new ToggleNode(false);
+        public ToggleNode HideUndesiredRecipesFromWorkTowardSelector { get; set; } = new ToggleNode(false);
         public ToggleNode CacheGroundItemPosition { get; set; } = new ToggleNode(true);
         public ToggleNode DisplayRecipeComponents { get; set; } = new ToggleNode(true);
         public ColorNode UndesiredItemColor { get; set; } = new ColorNode(Color.Red);

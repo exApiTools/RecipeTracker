@@ -66,10 +66,6 @@ namespace ArchnemesisRecipeTracker
                    .ToList(), 200);
         }
 
-        public override void OnLoad()
-        {
-        }
-
         public override bool Initialise()
         {
             Input.RegisterKey(Settings.ToggleWindowKey);
@@ -81,6 +77,7 @@ namespace ArchnemesisRecipeTracker
                 if (_recipesByName.ContainsKey(newValue))
                 {
                     Settings.DesiredRecipes.Add(newValue);
+                    RebuildRecipeToWorkTowardList();
                     RebuildDesiredComponentCache();
                 }
             };
@@ -185,8 +182,8 @@ namespace ArchnemesisRecipeTracker
 
                 _recipesByResult = fullRecipeBook.Where(x => x.Result != null).ToDictionary(x => x.Result);
                 _recipesByName = fullRecipeBook.ToDictionary(x => x.Name);
-                Settings.RecipeToWorkTowards.SetListValues(_recipesByName.Keys.OrderBy(x => x).Prepend(ArchnemesisRecipeTrackerSettings.NoRecipeSelected).ToList());
                 _trackedRecipe = null;
+                RebuildRecipeToWorkTowardList();
             }
             catch (Exception ex)
             {
@@ -194,7 +191,15 @@ namespace ArchnemesisRecipeTracker
             }
         }
 
-        private HashSet<RecipeEntry> GetRecipesWithEnoughIngredients(ICollection<string> presentIngredients, ICollection<string> excludedIngredients, ICollection<string> putInIngredients)
+        private void RebuildRecipeToWorkTowardList()
+        {
+            Settings.RecipeToWorkTowards.SetListValues(_recipesByName.Keys
+               .Where(x => !Settings.HideUndesiredRecipesFromWorkTowardSelector || Settings.DesiredRecipes.Contains(x))
+               .OrderBy(x => x).Prepend(ArchnemesisRecipeTrackerSettings.NoRecipeSelected).ToList());
+        }
+
+        private HashSet<RecipeEntry> GetRecipesWithEnoughIngredients(ICollection<string> presentIngredients, ICollection<string> excludedIngredients,
+                                                                     ICollection<string> putInIngredients)
         {
             return _recipesByName.Values
                .Where(x => x.Recipe.Union(putInIngredients).Take(4 + 1).Count() <= 4)
@@ -291,6 +296,7 @@ namespace ArchnemesisRecipeTracker
                             Settings.DesiredRecipes.Remove(recipeEntry.Name);
                         }
 
+                        RebuildRecipeToWorkTowardList();
                         RebuildDesiredComponentCache();
                     }
                 }
@@ -515,6 +521,8 @@ namespace ArchnemesisRecipeTracker
                 ImGui.End();
             }
 
+            //this window allows us to change the size of the text we draw to the background list
+            //yeah, it's weird
             ImGui.Begin("lmao",
                 ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav);
             var drawList = ImGui.GetBackgroundDrawList();
