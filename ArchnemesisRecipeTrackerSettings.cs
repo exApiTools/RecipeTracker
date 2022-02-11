@@ -12,7 +12,11 @@ namespace ArchnemesisRecipeTracker
     {
         internal const string NoRecipeSelected = "(none)";
 
+        //these are internal switches, they work if you edit them in the config, but don't show up in the UI
         public bool DisableDefaultRecipeBook { get; set; } = false;
+        public bool DisableAutomaticDefaultRecipeBook { get; set; } = false;
+
+
         public ToggleNode Enable { get; set; } = new ToggleNode(false);
 
         [JsonIgnore]

@@ -115,16 +115,30 @@ namespace ArchnemesisRecipeTracker
 
         private void ExportDefaultRecipeBook()
         {
-            var customRecipeBookPath = Path.Combine(DirectoryFullName, "defaultRecipeBook.json");
-            using var defaultBookReader = GetDefaultRecipeBook();
-            using var fileStream = File.Open(customRecipeBookPath, FileMode.Create, FileAccess.ReadWrite, FileShare.ReadWrite);
-            defaultBookReader.CopyTo(fileStream);
+            var defaultBookPath = Path.Combine(DirectoryFullName, "defaultRecipeBook.json");
+            var defaultBook = GetDefaultRecipeBook().OrderBy(x => x.Name);
+            File.WriteAllText(defaultBookPath, JsonConvert.SerializeObject(defaultBook, Formatting.Indented));
         }
 
-        private static Stream GetDefaultRecipeBook()
+        private List<RecipeEntry> GetDefaultRecipeBook()
         {
-            return _assembly.GetManifestResourceStream("defaultRecipeBook.json") ??
-                   throw new Exception("Embedded defaultRecipeBook.json is missing");
+            if (Settings.DisableAutomaticDefaultRecipeBook)
+            {
+                var recipeBookStream = _assembly.GetManifestResourceStream("defaultRecipeBook.json") ??
+                                       throw new Exception("Embedded defaultRecipeBook.json is missing");
+                using var defaultBookReader = new StreamReader(recipeBookStream);
+                var text = defaultBookReader.ReadToEnd();
+                var defaultRecipeBook = JsonConvert.DeserializeObject<List<RecipeEntry>>(text) ??
+                                        throw new Exception("null in default recipe book");
+                return defaultRecipeBook;
+            }
+
+            return GameController.Files.ArchnemesisRecipes.EntriesList.Select(x => new RecipeEntry
+            {
+                Name = x.Outcome.DisplayName,
+                Result = x.Outcome.DisplayName,
+                Recipe = x.Components.Select(c => c.DisplayName).ToList()
+            }).ToList();
         }
 
         private void ReloadRecipeBook()
@@ -132,13 +146,7 @@ namespace ArchnemesisRecipeTracker
             try
             {
                 var fullRecipeBook = new List<RecipeEntry>();
-                using (var defaultBookReader = new StreamReader(GetDefaultRecipeBook()))
-                {
-                    var text = defaultBookReader.ReadToEnd();
-                    var defaultRecipeBook = JsonConvert.DeserializeObject<List<RecipeEntry>>(text) ??
-                                            throw new Exception("null in default recipe book");
-                    fullRecipeBook.AddRange(defaultRecipeBook);
-                }
+                fullRecipeBook.AddRange(GetDefaultRecipeBook());
 
                 var customRecipeBookPath = Path.Combine(DirectoryFullName, "customRecipeBook.json");
                 if (!File.Exists(customRecipeBookPath))
