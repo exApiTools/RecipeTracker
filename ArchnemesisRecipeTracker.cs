@@ -313,7 +313,21 @@ namespace ArchnemesisRecipeTracker
 
         private void RenderRecipeLine(RecipeEntry recipe, Color color, HashSet<RecipeEntry> completedRecipes, HashSet<string> putInIngredients)
         {
+            var inputPanel = GameController.IngameState.IngameUi.ArchnemesisAltarPanel;
+            var fullPutInList = inputPanel.IsVisible
+                                  ? _alreadyPutInCache = inputPanel.InventoryElements.Select(x => x.Item.DisplayName).ToList()
+                                  : _alreadyPutInCache;
+            var inventory = GameController.IngameState.IngameUi.ArchnemesisInventoryPanel;
             var recipeIsCompleted = completedRecipes.Contains(recipe);
+			var presentIngredients =
+                inventory.IsVisible
+                    ? _presentIngredientCache =
+                          _inventoryElementsCache.Value
+                             .Select(x => x.itemDisplayName)
+                             .Concat(fullPutInList)
+                             .GroupBy(x => x)
+                             .ToDictionary(x => x.Key, x => x.Count())
+                    : _presentIngredientCache;
             if (recipeIsCompleted && _trackedRecipe == recipe)
             {
                 _trackedRecipe = null;
@@ -321,8 +335,9 @@ namespace ArchnemesisRecipeTracker
 
             var ticked = _trackedRecipe == recipe;
             ImGui.PushStyleColor(ImGuiCol.Text, (recipeIsCompleted ? Color.Gray : color).ToImgui());
-
-            if (ImGui.Checkbox(recipe.Name, ref ticked))
+            presentIngredients.TryGetValue(recipe.Name, out var value);
+            var auxString = "(" + value.ToString() + ") " + recipe.Name;
+            if (ImGui.Checkbox(auxString, ref ticked))
             {
                 _trackedRecipe = ticked ? recipe : null;
             }
@@ -341,7 +356,7 @@ namespace ArchnemesisRecipeTracker
                 }
 
                 var sb = new StringBuilder(100);
-                sb.Append("(");
+                sb.Append(" (");
                 sb.Append(recipe.Recipe.Count);
                 sb.Append(" ingredient");
                 if (recipe.Recipe.Count != 1)
