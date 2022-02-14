@@ -28,6 +28,8 @@ namespace ArchnemesisRecipeTracker
         [Menu("Toggle window key")]
         public HotkeyNode ToggleWindowKey { get; set; } = new HotkeyNode(Keys.NumPad4);
 
+        public ToggleNode ShowFullIngredientList { get; set; } = new ToggleNode(true);
+        public ToggleNode ShowMissingIngredientsInFullList { get; set; } = new ToggleNode(true);
         public ToggleNode ShowWindowOnZoneChange { get; set; } = new ToggleNode(false);
         public ToggleNode ShowWindowWhenArchnemesisInventoryOpens { get; set; } = new ToggleNode(false);
         public ToggleNode HideWindowWhenArchnemesisInventoryCloses { get; set; } = new ToggleNode(false);

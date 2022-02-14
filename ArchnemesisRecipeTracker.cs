@@ -46,6 +46,7 @@ namespace ArchnemesisRecipeTracker
         private bool windowState;
 
         private Dictionary<string, RecipeEntry> _recipesByResult = new Dictionary<string, RecipeEntry>();
+        private Dictionary<string, int> _ingredientTiers = new Dictionary<string, int>();
         private RecipeEntry _trackedRecipe;
         private HashSet<string> _desiredComponentCache = new HashSet<string>();
         private List<string> _alreadyPutInCache = new List<string>();
@@ -141,6 +142,26 @@ namespace ArchnemesisRecipeTracker
             }).ToList();
         }
 
+        private int GetComponentTier(string ingredientName)
+        {
+            if (_ingredientTiers.TryGetValue(ingredientName, out var tier))
+            {
+                return tier;
+            }
+
+            if (_recipesByResult.TryGetValue(ingredientName, out var recipe))
+            {
+                tier = recipe.Recipe.Select(GetComponentTier).Max() + 1;
+            }
+            else
+            {
+                tier = 1;
+            }
+
+            _ingredientTiers[ingredientName] = tier;
+            return tier;
+        }
+
         private void ReloadRecipeBook()
         {
             try
@@ -192,6 +213,11 @@ namespace ArchnemesisRecipeTracker
                 _recipesByName = fullRecipeBook.ToDictionary(x => x.Name);
                 _trackedRecipe = null;
                 RebuildRecipeToWorkTowardList();
+                _ingredientTiers.Clear();
+                foreach (var ingredient in _recipesByResult.Keys)
+                {
+                    GetComponentTier(ingredient);
+                }
             }
             catch (Exception ex)
             {
@@ -311,7 +337,8 @@ namespace ArchnemesisRecipeTracker
             }
         }
 
-        private void RenderRecipeLine(RecipeEntry recipe, Color color, HashSet<RecipeEntry> completedRecipes, HashSet<string> putInIngredients)
+        private void RenderRecipeLine(RecipeEntry recipe, Color color, HashSet<RecipeEntry> completedRecipes, HashSet<string> putInIngredients,
+                                      IReadOnlyDictionary<string, int> presentIngredients)
         {
             var recipeIsCompleted = completedRecipes.Contains(recipe);
             if (recipeIsCompleted && _trackedRecipe == recipe)
@@ -321,8 +348,15 @@ namespace ArchnemesisRecipeTracker
 
             var ticked = _trackedRecipe == recipe;
             ImGui.PushStyleColor(ImGuiCol.Text, (recipeIsCompleted ? Color.Gray : color).ToImgui());
+            var recipeLine = new StringBuilder();
+            if (recipe.Result != null)
+            {
+                presentIngredients.TryGetValue(recipe.Result, out var present);
+                recipeLine.AppendFormat("({0}) ", present);
+            }
 
-            if (ImGui.Checkbox(recipe.Name, ref ticked))
+            recipeLine.Append($"{recipe.Name}###{recipe.Name}");
+            if (ImGui.Checkbox(recipeLine.ToString(), ref ticked))
             {
                 _trackedRecipe = ticked ? recipe : null;
             }
@@ -341,7 +375,11 @@ namespace ArchnemesisRecipeTracker
                 }
 
                 var sb = new StringBuilder(100);
-                sb.Append("(");
+                if (!Settings.DisplayRecipeComponents)
+                {
+                    sb.Append(" (");
+                }
+
                 sb.Append(recipe.Recipe.Count);
                 sb.Append(" ingredient");
                 if (recipe.Recipe.Count != 1)
@@ -356,10 +394,12 @@ namespace ArchnemesisRecipeTracker
                     {
                         if (putInIngredients.Contains(ingredient))
                         {
-                            ImGui.Text(sb.ToString());
+                            ImGui.TextWrapped(sb.ToString());
                             sb.Clear();
                             ImGui.SameLine(0, 0);
-                            ImGui.TextColored(Color.Green.ToImguiVec4(), ingredient);
+                            ImGui.PushStyleColor(ImGuiCol.Text, Color.Green.ToImguiVec4());
+                            ImGui.TextWrapped(ingredient);
+                            ImGui.PopStyleColor();
                             ImGui.SameLine(0, 0);
                         }
                         else
@@ -367,7 +407,8 @@ namespace ArchnemesisRecipeTracker
                             sb.Append(ingredient);
                         }
 
-                        sb.Append(", ");
+                        presentIngredients.TryGetValue(ingredient, out var count);
+                        sb.AppendFormat("({0}), ", count);
                     }
 
                     sb.Length -= 2;
@@ -378,9 +419,12 @@ namespace ArchnemesisRecipeTracker
                     }
                 }
 
-                sb.Append(')');
+                if (!Settings.DisplayRecipeComponents)
+                {
+                    sb.Append(')');
+                }
 
-                ImGui.Text(sb.ToString());
+                ImGui.TextWrapped(sb.ToString());
             }
         }
 
@@ -454,17 +498,17 @@ namespace ArchnemesisRecipeTracker
                     nextSteps = GetNextSteps(recipeToWorkOn, new Dictionary<string, int>(presentIngredients));
                     if (nextSteps.RecipesToRun.Any())
                     {
-                        ImGui.Text($"Run {string.Join(", ", nextSteps.RecipesToRun.GroupBy(x => x).Select(x => x.Count() == 1 ? x.Key : $"{x.Count()}x {x.Key}"))}");
+                        ImGui.TextWrapped($"Run {string.Join(", ", nextSteps.RecipesToRun.GroupBy(x => x).Select(x => x.Count() == 1 ? x.Key : $"{x.Count()}x {x.Key}"))}");
                     }
 
                     if (nextSteps.ItemsToCollect.Any())
                     {
-                        ImGui.Text($"Collect {string.Join(", ", nextSteps.ItemsToCollect.GroupBy(x => x).Select(x => x.Count() == 1 ? x.Key : $"{x.Count()}x {x.Key}"))}");
+                        ImGui.TextWrapped($"Collect {string.Join(", ", nextSteps.ItemsToCollect.GroupBy(x => x).Select(x => x.Count() == 1 ? x.Key : $"{x.Count()}x {x.Key}"))}");
                     }
 
                     if (!nextSteps.ItemsToCollect.Any() && !nextSteps.RecipesToRun.Any())
                     {
-                        ImGui.Text("Umm... nothing to be done! This isn't supposed to happen, but ok");
+                        ImGui.TextWrapped("Umm... nothing to be done! This isn't supposed to happen, but ok");
                     }
                 }
 
@@ -475,7 +519,7 @@ namespace ArchnemesisRecipeTracker
                     var nextStepRecipeNames = nextSteps.RecipesToRun.ToHashSet();
                     if (_trackedRecipe != null && !recipesWithEnoughIngredients.Contains(_trackedRecipe))
                     {
-                        RenderRecipeLine(_trackedRecipe, Settings.RecipeItemColor, completedRecipes, combinableIngredients);
+                        RenderRecipeLine(_trackedRecipe, Settings.RecipeItemColor, completedRecipes, combinableIngredients, presentIngredients);
                         ImGui.SameLine();
                         ImGui.TextColored(Color.Yellow.ToImguiVec4(), "(cannot complete in this map)");
                         ImGui.Separator();
@@ -489,7 +533,7 @@ namespace ArchnemesisRecipeTracker
                     {
                         foreach (var recipe in recipesToBuildTrackedItem)
                         {
-                            RenderRecipeLine(recipe, Settings.RecipeItemColor, completedRecipes, combinableIngredients);
+                            RenderRecipeLine(recipe, Settings.RecipeItemColor, completedRecipes, combinableIngredients, presentIngredients);
                         }
 
                         ImGui.Separator();
@@ -508,7 +552,7 @@ namespace ArchnemesisRecipeTracker
                         ImGui.Text("but are marked as desired");
                         foreach (var recipe in desiredRecipes)
                         {
-                            RenderRecipeLine(recipe, Settings.DesiredItemColor, completedRecipes, combinableIngredients);
+                            RenderRecipeLine(recipe, Settings.DesiredItemColor, completedRecipes, combinableIngredients, presentIngredients);
                         }
 
                         ImGui.Separator();
@@ -521,7 +565,7 @@ namespace ArchnemesisRecipeTracker
                         ImGui.Text("just there for you to know you can do them");
                         foreach (var recipe in recipesWithEnoughIngredients.OrderBy(x => x.Name))
                         {
-                            RenderRecipeLine(recipe, Settings.UndesiredItemColor, completedRecipes, combinableIngredients);
+                            RenderRecipeLine(recipe, Settings.UndesiredItemColor, completedRecipes, combinableIngredients, presentIngredients);
                         }
                     }
                 }
@@ -534,39 +578,60 @@ namespace ArchnemesisRecipeTracker
             ImGui.Begin("lmao",
                 ImGuiWindowFlags.NoDecoration | ImGuiWindowFlags.NoBackground | ImGuiWindowFlags.NoInputs | ImGuiWindowFlags.NoFocusOnAppearing | ImGuiWindowFlags.NoNav);
             var drawList = ImGui.GetBackgroundDrawList();
-            if (inventory.IsVisible && inputPanel.IsVisible && _trackedRecipe != null)
+            if (inventory.IsVisible)
             {
-                var recipeSet = _trackedRecipe.Recipe.ToHashSet();
-                var panelClientRect = inputPanel.GetClientRect();
-                var textDisplayPosition = new Vector2(panelClientRect.Left, panelClientRect.Center.Y);
-
-                void DrawText(string text, Vector2 position, Color color, float scale = 1)
+                if (Settings.ShowFullIngredientList)
                 {
-                    ImGui.SetWindowFontScale(scale);
-                    var boxRect = ImGui.CalcTextSize(text);
-                    drawList.AddRectFilled(position, position + boxRect, Color.Black.ToImgui());
-                    drawList.AddText(position, color.ToImgui(), text);
-                    ImGui.SetWindowFontScale(1);
-                }
-
-                if (recipeSet.IsProperSupersetOf(presentIngredients.Keys))
-                {
-                    DrawText($"You are missing components of recipe {_trackedRecipe.Name}: " +
-                             string.Join(", ", recipeSet.Except(presentIngredients.Keys)), textDisplayPosition, Color.Yellow);
-                }
-                else
-                {
-                    var itemMap = _trackedRecipe.Recipe.Except(combinableIngredients).Select((name, i) => (name, i))
-                       .ToDictionary(x => x.name, x => x.i + 1);
-                    foreach (var (element, itemDisplayName) in _inventoryElementsCache.Value)
+                    var pos = new Vector2(
+                        inventory.GetChildFromIndices(2, 0, 0)?.GetClientRectCache.Right ?? inventory.GetClientRectCache.Right,
+                        inventory.GetChildAtIndex(2)?.GetClientRectCache.Y ?? inventory.GetClientRectCache.Y);
+                    var height = ImGui.GetTextLineHeight();
+                    foreach (var pair in _ingredientTiers.OrderBy(x => x.Value).ThenBy(x => x.Key))
                     {
-                        if (itemMap.TryGetValue(itemDisplayName, out var itemIndex))
+                        presentIngredients.TryGetValue(pair.Key, out var count);
+                        if (count > 0 || Settings.ShowMissingIngredientsInFullList)
                         {
-                            var elementRect = element.GetClientRectCache;
-                            elementRect.Inflate(-2, -2);
-                            DrawText(itemIndex.ToString(), elementRect.TopLeft.ToVector2Num(),
-                                itemIndex == 1 ? Settings.PutInNowItemColor : Settings.RecipeItemColor,
-                                1 + Settings.OrderTextSize * (elementRect.Height / ImGui.CalcTextSize(itemIndex.ToString()).Y - 1));
+                            var text = $"[T{pair.Value}] {pair.Key} ({count})";
+                            drawList.AddText(pos, count > 0 ? Color.White.ToImgui() : Settings.UndesiredItemColor.Value.ToImgui(), text);
+                            pos.Y += height;
+                        }
+                    }
+                }
+
+                if (inputPanel.IsVisible && _trackedRecipe != null)
+                {
+                    var recipeSet = _trackedRecipe.Recipe.ToHashSet();
+                    var panelClientRect = inputPanel.GetClientRect();
+                    var textDisplayPosition = new Vector2(panelClientRect.Left, panelClientRect.Center.Y);
+
+                    void DrawText(string text, Vector2 position, Color color, float scale = 1)
+                    {
+                        ImGui.SetWindowFontScale(scale);
+                        var boxRect = ImGui.CalcTextSize(text);
+                        drawList.AddRectFilled(position, position + boxRect, Color.Black.ToImgui());
+                        drawList.AddText(position, color.ToImgui(), text);
+                        ImGui.SetWindowFontScale(1);
+                    }
+
+                    if (recipeSet.IsProperSupersetOf(presentIngredients.Keys))
+                    {
+                        DrawText($"You are missing components of recipe {_trackedRecipe.Name}: " +
+                                 string.Join(", ", recipeSet.Except(presentIngredients.Keys)), textDisplayPosition, Color.Yellow);
+                    }
+                    else
+                    {
+                        var itemMap = _trackedRecipe.Recipe.Except(combinableIngredients).Select((name, i) => (name, i))
+                           .ToDictionary(x => x.name, x => x.i + 1);
+                        foreach (var (element, itemDisplayName) in _inventoryElementsCache.Value)
+                        {
+                            if (itemMap.TryGetValue(itemDisplayName, out var itemIndex))
+                            {
+                                var elementRect = element.GetClientRectCache;
+                                elementRect.Inflate(-2, -2);
+                                DrawText(itemIndex.ToString(), elementRect.TopLeft.ToVector2Num(),
+                                    itemIndex == 1 ? Settings.PutInNowItemColor : Settings.RecipeItemColor,
+                                    1 + Settings.OrderTextSize * (elementRect.Height / ImGui.CalcTextSize(itemIndex.ToString()).Y - 1));
+                            }
                         }
                     }
                 }
