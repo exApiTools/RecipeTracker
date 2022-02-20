@@ -490,6 +490,10 @@ namespace ArchnemesisRecipeTracker
             if (windowState)
             {
                 ImGui.Begin($"{Name}", ref windowState);
+                unsafe
+                {
+                    ImGui.PushFont(Graphics.Font.Atlas);
+                }
                 ImGui.Text($"{4 - fullPutInList.Count} free slots left");
                 var recipeToWorkOn = PickRecipeToWorkOn();
                 var nextSteps = NextSteps.Empty;
@@ -570,6 +574,7 @@ namespace ArchnemesisRecipeTracker
                     }
                 }
 
+                ImGui.PopFont();
                 ImGui.End();
             }
 
